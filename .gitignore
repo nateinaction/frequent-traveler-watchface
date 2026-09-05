@@ -1,0 +1,20 @@
+# Build output
+/build
+.lock-waf_darwin_build
+.lock-waf_linux_build
+
+# Object / linker artifacts
+*.o
+*.d
+*.elf
+*.map
+*.pbw
+
+# Node
+/node_modules
+
+# direnv / nix (flake.lock IS committed; the cache dir is not)
+/.direnv
+
+# macOS
+.DS_Store

@@ -1,0 +1,44 @@
+{
+  "name": "frequent-traveller",
+  "author": "Nate Gay",
+  "version": "1.0.0",
+  "keywords": [
+    "pebble-watchface"
+  ],
+  "private": true,
+  "dependencies": {},
+  "scripts": {
+    "install-emulator": "pebble build && pebble install --emulator emery && pebble logs",
+    "screenshot": "pebble build && pebble install --emulator emery && pebble screenshot store/screenshots/screenshot_emery.png --emulator emery --no-open"
+  },
+  "pebble": {
+    "displayName": "Frequent Traveller",
+    "uuid": "01072cc6-f6eb-49bc-a6ce-3f40d4d2d176",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery",
+      "basalt",
+      "flint"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": [
+      "configurable"
+    ],
+    "messageKeys": [
+      "LOCAL_OFFSET",
+      "LOCAL_LABEL",
+      "NUM_ZONES",
+      "H24",
+      "DARK",
+      "Z_LABEL_0", "Z_LABEL_1", "Z_LABEL_2", "Z_LABEL_3", "Z_LABEL_4", "Z_LABEL_5",
+      "Z_OFFSET_0", "Z_OFFSET_1", "Z_OFFSET_2", "Z_OFFSET_3", "Z_OFFSET_4", "Z_OFFSET_5",
+      "REQUEST_CONFIG"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}
