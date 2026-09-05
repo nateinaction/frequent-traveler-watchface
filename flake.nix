@@ -20,10 +20,11 @@
         # `-mthumb`/`-mcpu` flags.
         default = pkgs.mkShellNoCC {
           packages = [
-            pkgs.uv        # installs/runs the coredevices `pebble` CLI (uv tool)
-            pkgs.nodejs    # `pebble build` needs npm >= 3.0.0 to bundle pkjs
-            pkgs.python3   # screenshot/asset helpers
-            pkgs.libpng    # qemu-pebble links against it; see DYLD note below
+            pkgs.uv          # installs/runs the coredevices `pebble` CLI (uv tool)
+            pkgs.nodejs      # `pebble build` needs npm >= 3.0.0 to bundle pkjs
+            pkgs.python3     # screenshot/asset helpers
+            pkgs.libpng      # qemu-pebble links against it; see DYLD note below
+            pkgs.pre-commit  # git hook runner (see .pre-commit-config.yaml)
           ];
 
           shellHook = ''
@@ -47,6 +48,13 @@
               echo "pebble CLI not found. Install it with:"
               echo "    uv tool install pebble-tool"
               echo "(uv is provided by this dev shell)."
+            fi
+
+            # Keep the git hook in sync with .pre-commit-config.yaml on every
+            # shell entry, so a fresh clone (or a config change) is wired up
+            # without a manual `pre-commit install` step.
+            if [ -d .git ]; then
+              pre-commit install --install-hooks >/dev/null
             fi
           '';
         };

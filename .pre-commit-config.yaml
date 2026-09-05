@@ -1,0 +1,30 @@
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+    - id: trailing-whitespace
+    - id: end-of-file-fixer
+    - id: check-yaml
+    - id: check-json
+    - id: check-added-large-files
+    - id: check-merge-conflict
+
+- repo: https://github.com/codespell-project/codespell
+  rev: v2.4.1
+  hooks:
+    - id: codespell
+      args: [--ignore-words=.codespell-ignore-words.txt]
+
+- repo: https://github.com/pre-commit/mirrors-clang-format
+  rev: v20.1.8
+  hooks:
+    - id: clang-format
+      files: ^src/c/.*\.(c|h)$
+
+- repo: https://github.com/cpplint/cpplint
+  rev: 2.0.0
+  hooks:
+    - id: cpplint
+      args:
+        - --config=cpplint.cfg
+      files: ^src/c/.*\.(c|h)$

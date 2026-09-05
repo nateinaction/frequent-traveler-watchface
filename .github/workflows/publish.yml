@@ -1,0 +1,46 @@
+name: publish
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      # PEBBLE_FIREBASE_ID_TOKEN (the credential pebble-tool actually needs)
+      # expires after about an hour, so it can't be stored as a secret
+      # directly. We store the long-lived refresh token instead and mint a
+      # fresh ID token on every run.
+      - name: Refresh Firebase ID token
+        id: firebase
+        env:
+          REFRESH_TOKEN: ${{ secrets.PEBBLE_FIREBASE_REFRESH_TOKEN }}
+          API_KEY: ${{ secrets.PEBBLE_FIREBASE_API_KEY }}
+        run: |
+          set -euo pipefail
+          response="$(curl -sS --fail-with-body -X POST \
+            "https://securetoken.googleapis.com/v1/token?key=${API_KEY}" \
+            --data-urlencode "grant_type=refresh_token" \
+            --data-urlencode "refresh_token=${REFRESH_TOKEN}")"
+          id_token="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id_token"])' <<<"$response")"
+          echo "::add-mask::${id_token}"
+          echo "id_token=${id_token}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish to the Rebble app store
+        env:
+          PEBBLE_FIREBASE_ID_TOKEN: ${{ steps.firebase.outputs.id_token }}
+        run: |
+          nix develop --command bash -euo pipefail -c '
+            uv tool install pebble-tool
+            pebble sdk install latest
+            pebble publish --non-interactive --no-gif-all-platforms
+          '
