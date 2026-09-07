@@ -29,12 +29,12 @@
     ],
     "messageKeys": [
       "LOCAL_OFFSET",
-      "LOCAL_LABEL",
+      "LOCAL_COLOR",
       "NUM_ZONES",
       "H24",
-      "DARK",
       "Z_LABEL_0", "Z_LABEL_1", "Z_LABEL_2", "Z_LABEL_3", "Z_LABEL_4", "Z_LABEL_5",
       "Z_OFFSET_0", "Z_OFFSET_1", "Z_OFFSET_2", "Z_OFFSET_3", "Z_OFFSET_4", "Z_OFFSET_5",
+      "Z_COLOR_0", "Z_COLOR_1", "Z_COLOR_2", "Z_COLOR_3", "Z_COLOR_4", "Z_COLOR_5",
       "REQUEST_CONFIG"
     ],
     "resources": {

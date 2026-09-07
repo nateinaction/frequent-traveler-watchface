@@ -1,25 +1,21 @@
 # Frequent Traveller
 
-A Pebble watchface for people who live across timezones. The screen is a stack
-of full-width colour bands, one per timezone:
+A Pebble watchface for people who live across timezones.
 
-- **Your local time** — always present, on a **red** band
-- **UTC** — always present, on a **blue** band
-- **Up to six extra zones** you configure — on the plain background
+The whole screen is a stack of full-width color bands, one per timezone, each in
+a **color you pick**. There is no header: your **local zone is a band like any
+other**, just always **pinned to the top**, and it carries the **date** where the
+other bands carry their label.
 
-Bands are ordered **east to west by UTC offset**: every zone ahead of UTC sits
-above the blue band, every zone behind it sits below, and the red local band
-takes whatever position its own offset earns.
+The bands below it are ordered **east to west by UTC offset**: every zone ahead
+of UTC sits above every zone behind it. UTC is only the reference the sort is
+against — it gets a band of its own only if you add it as a zone.
 
 A configured zone that currently resolves to the **same offset as your local
-zone or as UTC is hidden**, rather than drawn as a duplicate band — the
+zone is hidden**, rather than drawn as a duplicate of the local band — the
 remaining rows just grow to fill the space.
 
-The background is **white by default**; a dark theme is available in Settings.
-
-A slim header carries just the date. Unlike the watchface this is modelled on,
-there is deliberately **no time in the header** — local time already has a band
-of its own.
+The background is **white**, and so is a band whose color you haven't changed.
 
 Any row whose calendar date differs from your local date gets a `+1` / `-1`
 suffix on its label.
@@ -33,53 +29,68 @@ change is correct.
 
 | # | Requirement |
 |---|-------------|
-| 1 | The watchface **always shows a UTC row**, with a **blue** background. |
-| 2 | The watchface **always shows the current (local) time row**, with a **red** background. |
-| 3 | The watchface **allows additional timezones to be added**. |
-| 4 | The watchface **background is white by default**. |
-| 5 | **No time on the top bar.** Unlike the watchface this is modelled on, the header carries only the date. |
-| 6 | **Rows must be in order**: all zones ahead of UTC above the UTC row, all zones behind UTC below it. |
-| 7 | **Any timezone row matching current or UTC is hidden** from the list. |
+| 1 | **Local time is a row like any other timezone**, but is **always drawn first**. It carries the **local date**, set in the same size as every other row's text. |
+| 2 | The watchface **allows additional timezones to be added**. |
+| 3 | The watchface **background is white**, as is the default color of every band. |
+| 4 | **Rows must be in order** by UTC offset: zones ahead of UTC above, zones behind UTC below. |
+| 5 | **Any timezone row matching the current (local) zone is hidden** from the list. |
+| 6 | **Every timezone has a configurable background color**, chosen with an RGB color picker. |
 
-Requirement 6 places the red local band by **its own offset**, not at a fixed
-position — it sorts in among the other zones wherever its offset puts it.
+Requirement 1 puts the date in the local row's label slot — with no header left,
+that is where it goes, and it means the date is set in the row font like
+everything else. The local row is the one exception to requirement 4: it is
+pinned above the sort rather than placed by its own offset.
 
-Requirement 7 matches on the **live UTC offset**, not the IANA zone name. That
-is what makes Lisbon collapse into the UTC band in winter and reappear as its
-own band in summer. Matching on name instead would keep the row year-round and
-show two identical clocks for half of it.
+Requirement 4 orders the remaining rows against UTC as a fixed reference point;
+UTC itself is just another zone the user may or may not have added, and gets no
+row of its own unless they choose it.
+
+Requirement 5 matches on the **live UTC offset**, not the IANA zone name. That
+is what makes a zone collapse out of the list in winter and reappear as its own
+row in summer. Matching on name instead would keep the row year-round and show
+two identical clocks for half of it.
 
 ## Layout
 
-The sort behind requirement 6 is stable, so zones sharing an offset keep the
+The sort behind requirement 4 is stable, so zones sharing an offset keep the
 order you configured them in.
 
-Rows share the body of the screen evenly, so the type scales with how many
-zones you've added — two rows get `GOTHIC_28_BOLD`, eight rows get
-`GOTHIC_18_BOLD`. Band edges are interpolated across the full body height, which
-spreads leftover pixels evenly and leaves no uncoloured seams between bands.
+Rows share the screen evenly, so the type scales with how many zones you've
+added. Band edges are interpolated across the full height, which spreads
+leftover pixels evenly and leaves no uncolored seams between bands.
 
 | Rows | Contents | Row height (emery) |
 |------|----------|--------------------|
-| 2 | local + UTC | 97 px |
-| 5 | local + UTC + 3 zones (default) | 38 px |
-| 8 | local + UTC + 6 zones (max) | 24 px |
+| 1 | local only | 228 px |
+| 6 | local + 5 zones (shipped default) | 38 px |
+| 7 | local + 6 zones (max) | 32 px |
 
-Because of requirement 7, the row count can be lower than the number of zones
-you configured.
+Font size follows both constraints, not just height: a band tall enough for
+`GOTHIC_28_BOLD` still drops to a smaller font if the widest label — including
+its `+1` marker — won't fit beside the clock, which is what a 144px screen runs
+into first.
+
+The date is exempt from that. Rather than let one long string drag every row
+down a size, it shortens itself to fit the font already chosen: `Sun 06 Sep`,
+then `06 Sep`, then `06`.
+
+Because of requirement 5, the row count can be lower than the number of zones
+you configured — down to one, since the local row is always there.
+
+Text on each band is black or white, whichever contrasts with the band color.
 
 Targets `emery` (Pebble Time 2, 200×228), `basalt` (Pebble Time, 144×168) and
 `flint` (Pebble 2 Duo, 144×168). Layout is driven by `layer_get_bounds()`, so
-both screen sizes are handled by the same code.
+both screen sizes are handled by the same code. `flint` is black and white: it
+ignores band colors and separates every row with a rule instead.
 
 ## Settings
 
 Open the watchface's Settings from the Pebble app to configure:
 
-- **Local timezone** (IANA zone, so DST is handled) and the label on the red row
+- **Local timezone** (IANA zone, so DST is handled) and the **color of its band**
 - **12- / 24-hour clock**
-- **Dark background**
-- **Extra timezones** — up to six, each with a custom label
+- **Other timezones** — up to six, each with a custom label and a color
 
 ### How timezones actually work here
 
@@ -91,6 +102,18 @@ That resolution happens in the **config page's webview**, not in pkjs — the
 Pebble emulator's JS host (`pypkjs`) crashes with a fatal OOM on
 `Intl.DateTimeFormat` construction, so `src/pkjs/index.js` avoids `Intl`
 entirely and only forwards numbers. Offsets refresh whenever you save Settings.
+
+### Colors
+
+Out of the box the face ships the demo config in the screenshot above: black
+bands with **UTC** picked out in blue, under a white local band. A zone you add
+yourself starts **white** and stays that way until you pick a color for it.
+Adjacent bands of the same color are separated by a hairline rule, so an
+all-white face still reads as rows.
+
+The picker is a plain `<input type="color">`, but the Pebble screen only has 64
+colors (two bits per channel). The page snaps your choice to that palette as you
+pick it, so the swatch in Settings is what the watch actually draws.
 
 ## Development
 
@@ -164,8 +187,10 @@ echo "fix(watchface): stop the local row clipping" | convco check --from-stdin
 ```
 .convco                 commit types and the bump each one earns
 src/c/main.c            watchface: row model, band layout, drawing, AppMessage
+                        (one full-screen layer; no header)
 src/pkjs/index.js       phone companion: config persistence + AppMessage fan-out
-src/pkjs/config-page.js the Settings page (HTML string, resolves IANA -> offset)
+src/pkjs/config-page.js the Settings page (HTML string, resolves IANA -> offset,
+                        color picker)
 ```
 
 ## Credits
