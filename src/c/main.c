@@ -1,20 +1,18 @@
 // Frequent Traveller — a Pebble watchface for people who live across
-// timezones. The body of the screen is a stack of full-width colour bands, one
-// per timezone:
+// timezones.
 //
-//   * your local time, always present, on a RED band
-//   * UTC, always present, on a BLUE band
-//   * up to MAX_ZONES extra zones you configure, on the plain background
+// The whole screen is a stack of full-width color bands, one per timezone, each
+// in a color you pick in Settings. There is no header: your local zone is a
+// band like any other, just pinned to the top, and it carries the date where
+// the other bands carry their label.
 //
-// Bands are ordered east to west by UTC offset, so every zone ahead of UTC sits
-// above the blue band and every zone behind it sits below. A configured zone
-// that currently resolves to the local or UTC offset is hidden rather than
-// drawn as a duplicate band.
+// The bands below it are ordered east to west by UTC offset: every zone ahead
+// of UTC sits above every zone behind it. UTC is only the reference the sort is
+// against — it gets a band of its own only if you add it as a zone. A
+// configured zone that currently resolves to your local offset is hidden rather
+// than drawn as a duplicate of the local band.
 //
 // The background is white by default (a dark theme is available in Settings).
-// A slim header across the top carries just the date — unlike the watchface
-// this is modelled on, there is deliberately no time in the header, because
-// local time already has a band of its own.
 //
 // Any row whose calendar date differs from your local date gets a "+1" / "-1"
 // suffix on its label.
@@ -26,22 +24,29 @@
 
 #include <pebble.h>
 
-// MAX_ZONES is the user-configurable extra zones. Two more rows (local + UTC)
-// are always drawn, so MAX_ROWS bounds every row loop in this file.
+// The local band plus the configured zones, so MAX_ROWS bounds every row loop
+// in this file.
 #define MAX_ZONES 6
-#define MAX_ROWS (MAX_ZONES + 2)
+#define MAX_ROWS (MAX_ZONES + 1)
 #define MAX_LABEL_LEN 12
+// Room for a label plus the " +1" / " -1" day marker, or for the local band's
+// date ("Sun 06 Sep").
+#define LABEL_BUF_LEN (MAX_LABEL_LEN + 8)
 
 #define PERSIST_LOCAL_OFFSET 1
 #define PERSIST_NUM_ZONES 2
-#define PERSIST_ZONES_BLOB 3
 #define PERSIST_H24 4
 #define PERSIST_DARK 5
-#define PERSIST_LOCAL_LABEL 6
+#define PERSIST_LOCAL_COLOR 8
+// Bumped from 3 when Zone gained a color: a blob written by the previous
+// layout would deserialize into garbage offsets, so the old key is abandoned
+// and a missing v2 blob just falls back to defaults.
+#define PERSIST_ZONES_BLOB_V2 7
 
 typedef struct {
   char label[MAX_LABEL_LEN + 1];
   int32_t offset_min;  // minutes east of UTC
+  uint32_t color_rgb;  // 0xRRGGBB as picked on the phone
 } Zone;
 
 // AppMessage keys for per-slot zone values. A JS-side array fans out to
@@ -50,6 +55,7 @@ typedef struct {
 // these lookup tables are filled in at runtime by init_message_keys().
 static uint32_t kZLabelKey[MAX_ZONES];
 static uint32_t kZOffsetKey[MAX_ZONES];
+static uint32_t kZColorKey[MAX_ZONES];
 
 static void init_message_keys(void) {
   kZLabelKey[0] = MESSAGE_KEY_Z_LABEL_0;
@@ -64,17 +70,22 @@ static void init_message_keys(void) {
   kZOffsetKey[3] = MESSAGE_KEY_Z_OFFSET_3;
   kZOffsetKey[4] = MESSAGE_KEY_Z_OFFSET_4;
   kZOffsetKey[5] = MESSAGE_KEY_Z_OFFSET_5;
+  kZColorKey[0] = MESSAGE_KEY_Z_COLOR_0;
+  kZColorKey[1] = MESSAGE_KEY_Z_COLOR_1;
+  kZColorKey[2] = MESSAGE_KEY_Z_COLOR_2;
+  kZColorKey[3] = MESSAGE_KEY_Z_COLOR_3;
+  kZColorKey[4] = MESSAGE_KEY_Z_COLOR_4;
+  kZColorKey[5] = MESSAGE_KEY_Z_COLOR_5;
 }
 
 // ---- state ----
 static Window *s_window;
-static Layer *s_header_layer;
 static Layer *s_rows_layer;
 
 static Zone s_zones[MAX_ZONES];
 static int s_num_zones = 0;
 static int32_t s_local_offset_min = 0;
-static char s_local_label[MAX_LABEL_LEN + 1] = "LOCAL";
+static uint32_t s_local_color_rgb = 0xAA0000;
 static bool s_h24 = true;
 static bool s_dark = false;
 
@@ -82,18 +93,57 @@ static bool s_dark = false;
 // Theme
 // -----------------------------------------------------------------------------
 //
-// Only the plain rows and the header follow the theme. The local (red) and UTC
-// (blue) bands are fixed — they're the point of the watchface, and their white
-// text reads well on both.
+// With no header left, the theme only shows through in the seams between bands
+// and in whatever is behind them. Band colors come from the config, per zone.
 
 static GColor theme_bg(void) {
   return s_dark ? GColorBlack : GColorWhite;
 }
+#ifndef PBL_COLOR
+// Only black-and-white watches need a foreground from the theme: on a color
+// watch every glyph sits on a band and takes its contrast from the band color.
 static GColor theme_fg(void) {
   return s_dark ? GColorWhite : GColorBlack;
 }
+#endif
 static GColor theme_rule(void) {
+#ifdef PBL_COLOR
   return s_dark ? GColorDarkGray : GColorLightGray;
+#else
+  // No gray to make a subtle rule from, and on a black-and-white watch every
+  // band is the same color — the seams are the only thing keeping rows apart.
+  return theme_fg();
+#endif
+}
+
+// -----------------------------------------------------------------------------
+// Band colors
+// -----------------------------------------------------------------------------
+//
+// The phone sends 24-bit RGB. Color watches quantize it to their 64-color
+// palette; black-and-white watches can't honour it at all, so they fall back to
+// the theme and rely on the seam rules to keep rows apart.
+
+static GColor band_bg(uint32_t rgb) {
+#ifdef PBL_COLOR
+  return GColorFromRGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+#else
+  (void)rgb;
+  return theme_bg();
+#endif
+}
+
+// Rec. 601 luma, thresholded: dark bands take white text, light bands black.
+static GColor band_fg(uint32_t rgb) {
+#ifdef PBL_COLOR
+  uint32_t luma =
+      (299 * ((rgb >> 16) & 0xFF) + 587 * ((rgb >> 8) & 0xFF) + 114 * (rgb & 0xFF)) /
+      1000;
+  return (luma >= 140) ? GColorBlack : GColorWhite;
+#else
+  (void)rgb;
+  return theme_fg();
+#endif
 }
 
 // -----------------------------------------------------------------------------
@@ -104,6 +154,13 @@ static GColor theme_rule(void) {
 // line_h is the drawn height of the font (used to centre text in its band) and
 // time_w is the column reserved for the right-hand clock, which is wider in
 // 12-hour mode because of the trailing a/p.
+//
+// Height is only half the constraint: on a 144px screen a two-row layout has
+// room for 28pt bands but not for "TYO +1" beside a 28pt clock, so the chosen
+// font also has to leave the widest label its full width (see fit_row_font).
+//
+// The date on the local band is exempt from that: it shortens itself to fit the
+// font instead of dragging every row down a size (see local_date).
 
 typedef struct {
   const char *key;
@@ -121,16 +178,16 @@ static const RowFont ROW_FONTS[] = {
 };
 #define NUM_ROW_FONTS ((int)(sizeof(ROW_FONTS) / sizeof(ROW_FONTS[0])))
 
-static const RowFont *row_font_for(int row_h) {
+static int row_font_for(int row_h) {
   for (int i = 0; i < NUM_ROW_FONTS; i++) {
     if (row_h >= ROW_FONTS[i].min_row_h)
-      return &ROW_FONTS[i];
+      return i;
   }
-  return &ROW_FONTS[NUM_ROW_FONTS - 1];  // unreachable: last entry has min 0
+  return NUM_ROW_FONTS - 1;  // unreachable: last entry has min 0
 }
 
-static int header_height(int screen_h) {
-  return (screen_h > 168) ? 34 : 26;
+static int row_time_w(const RowFont *rf) {
+  return s_h24 ? rf->time_w_24 : rf->time_w_12;
 }
 
 // -----------------------------------------------------------------------------
@@ -144,21 +201,24 @@ static void set_label(char *dst, const char *src) {
 
 static void load_defaults(void) {
   s_local_offset_min = 0;
+  s_local_color_rgb = 0xAA0000;
   s_h24 = clock_is_24h_style();
   s_dark = false;
-  set_label(s_local_label, "LOCAL");
   memset(s_zones, 0, sizeof(s_zones));
   s_num_zones = 3;
   set_label(s_zones[0].label, "NYC");
   s_zones[0].offset_min = -300;
+  s_zones[0].color_rgb = 0xAA5500;
   set_label(s_zones[1].label, "LDN");
   s_zones[1].offset_min = 0;
+  s_zones[1].color_rgb = 0x0055AA;
   set_label(s_zones[2].label, "TYO");
   s_zones[2].offset_min = 540;
+  s_zones[2].color_rgb = 0x00AA55;
 }
 
 static void load_config(void) {
-  if (!persist_exists(PERSIST_NUM_ZONES) || !persist_exists(PERSIST_ZONES_BLOB)) {
+  if (!persist_exists(PERSIST_NUM_ZONES) || !persist_exists(PERSIST_ZONES_BLOB_V2)) {
     load_defaults();
     return;
   }
@@ -168,10 +228,13 @@ static void load_config(void) {
     s_num_zones = 0;
   if (s_num_zones > MAX_ZONES)
     s_num_zones = MAX_ZONES;
-  persist_read_data(PERSIST_ZONES_BLOB, s_zones, sizeof(s_zones));
+  persist_read_data(PERSIST_ZONES_BLOB_V2, s_zones, sizeof(s_zones));
 
   if (persist_exists(PERSIST_LOCAL_OFFSET)) {
     s_local_offset_min = persist_read_int(PERSIST_LOCAL_OFFSET);
+  }
+  if (persist_exists(PERSIST_LOCAL_COLOR)) {
+    s_local_color_rgb = (uint32_t)persist_read_int(PERSIST_LOCAL_COLOR) & 0xFFFFFF;
   }
   if (persist_exists(PERSIST_H24)) {
     s_h24 = persist_read_int(PERSIST_H24) != 0;
@@ -181,23 +244,21 @@ static void load_config(void) {
   if (persist_exists(PERSIST_DARK)) {
     s_dark = persist_read_int(PERSIST_DARK) != 0;
   }
-  if (persist_exists(PERSIST_LOCAL_LABEL)) {
-    // Truncation is fine here; a short buffer just means a shorter label.
-    persist_read_string(PERSIST_LOCAL_LABEL, s_local_label, sizeof(s_local_label));
-  }
-  // A blob written by an older/corrupt version could leave a label unterminated.
+  // A blob written by an older/corrupt version could leave a label unterminated
+  // or a color with junk in its high byte.
   for (int i = 0; i < MAX_ZONES; i++) {
     s_zones[i].label[MAX_LABEL_LEN] = '\0';
+    s_zones[i].color_rgb &= 0xFFFFFF;
   }
 }
 
 static void save_config(void) {
   persist_write_int(PERSIST_LOCAL_OFFSET, s_local_offset_min);
+  persist_write_int(PERSIST_LOCAL_COLOR, (int32_t)s_local_color_rgb);
   persist_write_int(PERSIST_NUM_ZONES, s_num_zones);
   persist_write_int(PERSIST_H24, s_h24 ? 1 : 0);
   persist_write_int(PERSIST_DARK, s_dark ? 1 : 0);
-  persist_write_string(PERSIST_LOCAL_LABEL, s_local_label);
-  persist_write_data(PERSIST_ZONES_BLOB, s_zones, sizeof(s_zones));
+  persist_write_data(PERSIST_ZONES_BLOB_V2, s_zones, sizeof(s_zones));
 }
 
 // -----------------------------------------------------------------------------
@@ -232,11 +293,12 @@ static void format_zone_time(time_t utc_now, int32_t off_min, char *out, int n) 
 // Row model
 // -----------------------------------------------------------------------------
 //
-// build_rows() flattens the config into the exact list the renderer draws, so
-// the drawing code never has to special-case local vs UTC vs configured zone.
+// build_rows() flattens the config into the exact list the renderer draws —
+// hidden zones removed, colors resolved, already in display order — so the
+// drawing code never has to consult the config at all.
 
 typedef struct {
-  const char *label;
+  const char *label;  // NULL on the local row, whose label is the date
   int32_t offset_min;
   GColor bg;
   GColor fg;
@@ -245,37 +307,38 @@ typedef struct {
 static int build_rows(Row *rows, int cap) {
   int n = 0;
 
+  // The local band is pinned to row 0 rather than sorted in by its offset: it's
+  // the one you read first, and it carries the date for the whole face.
   if (n < cap) {
-    rows[n++] = (Row){.label = s_local_label,
+    rows[n++] = (Row){.label = NULL,
                       .offset_min = s_local_offset_min,
-                      .bg = GColorRed,
-                      .fg = GColorWhite};
-  }
-  if (n < cap) {
-    rows[n++] =
-        (Row){.label = "UTC", .offset_min = 0, .bg = GColorBlue, .fg = GColorWhite};
-  }
-  // A configured zone that currently resolves to the local or UTC offset would
-  // just repeat a band that's already on screen — Lisbon in winter is UTC, and
-  // your own zone is a common pick — so drop it. This is deliberately checked
-  // against the live offset rather than the IANA name: the same zone can
-  // collide for half the year and separate again when DST shifts.
-  for (int i = 0; i < s_num_zones && i < MAX_ZONES && n < cap; i++) {
-    int32_t off = s_zones[i].offset_min;
-    if (off == s_local_offset_min || off == 0)
-      continue;
-    rows[n++] = (Row){
-        .label = s_zones[i].label, .offset_min = off, .bg = theme_bg(), .fg = theme_fg()};
+                      .bg = band_bg(s_local_color_rgb),
+                      .fg = band_fg(s_local_color_rgb)};
   }
 
-  // Sort east-to-west: everything ahead of UTC sits above the UTC band, and
-  // everything behind it sits below. The local band takes whatever position its
-  // own offset earns. Insertion sort — n is at most MAX_ROWS, and it's stable,
-  // so zones sharing an offset with UTC keep the order they were configured in.
-  for (int i = 1; i < n; i++) {
+  // A configured zone that currently resolves to your local offset would just
+  // repeat the local band, so drop it. This is deliberately checked against the
+  // live offset rather than the IANA name: the same zone can collide for half
+  // the year and separate again when DST shifts.
+  for (int i = 0; i < s_num_zones && i < MAX_ZONES && n < cap; i++) {
+    int32_t off = s_zones[i].offset_min;
+    if (off == s_local_offset_min)
+      continue;
+    rows[n++] = (Row){.label = s_zones[i].label,
+                      .offset_min = off,
+                      .bg = band_bg(s_zones[i].color_rgb),
+                      .fg = band_fg(s_zones[i].color_rgb)};
+  }
+
+  // Sort east-to-west against UTC as the reference: every zone ahead of UTC
+  // sits above every zone behind it. UTC itself only appears if the user added
+  // it. Insertion sort over rows[1..n) — row 0 is the pinned local band and
+  // stays put. n is at most MAX_ROWS, and the sort is stable, so zones sharing
+  // an offset keep the order they were configured in.
+  for (int i = 2; i < n; i++) {
     Row key = rows[i];
     int j = i - 1;
-    while (j >= 0 && rows[j].offset_min < key.offset_min) {
+    while (j >= 1 && rows[j].offset_min < key.offset_min) {
       rows[j + 1] = rows[j];
       j--;
     }
@@ -288,31 +351,53 @@ static int build_rows(Row *rows, int cap) {
 // Drawing
 // -----------------------------------------------------------------------------
 
-static void header_layer_update(Layer *layer, GContext *ctx) {
-  GRect b = layer_get_bounds(layer);
-  bool large = (b.size.h > 30);
+// Widest of the already-formatted labels, in pixels, at `font`.
+static int widest_label(char labels[][LABEL_BUF_LEN], int n, GFont font) {
+  int widest = 0;
+  for (int i = 0; i < n; i++) {
+    GSize s = graphics_text_layout_get_content_size(
+        labels[i], font, GRect(0, 0, 1000, 40), GTextOverflowModeWordWrap,
+        GTextAlignmentLeft);
+    if (s.w > widest)
+      widest = s.w;
+  }
+  return widest;
+}
 
-  graphics_context_set_fill_color(ctx, theme_bg());
-  graphics_fill_rect(ctx, b, 0, GCornerNone);
+// Step down from the tallest font the bands can hold until the widest label
+// fits beside the clock. Bounded by the font table, and the last entry is small
+// enough that the loop always terminates on a real fit or on that entry.
+static int fit_row_font(int start, char labels[][LABEL_BUF_LEN], int n, int screen_w) {
+  for (int i = start; i < NUM_ROW_FONTS - 1; i++) {
+    GFont font = fonts_get_system_font(ROW_FONTS[i].key);
+    int avail = screen_w - row_time_w(&ROW_FONTS[i]) - 10;
+    if (widest_label(labels, n, font) <= avail)
+      return i;
+  }
+  return NUM_ROW_FONTS - 1;
+}
 
-  // Date in the local zone. gmtime() on the offset-shifted timestamp gives the
-  // local wall clock, with tm_wday/tm_mon filled in for strftime.
-  time_t local_t = time(NULL) + (time_t)s_local_offset_min * 60;
+// The local band's label is the date, written into `out` in the longest form
+// that fits `avail` pixels at `font`. A clipped date is worse than one without
+// the weekday, and shortening it here keeps the date from forcing every row
+// down a font size.
+static void local_date(time_t utc_now, GFont font, int avail, char *out, int n) {
+  static const char *const FORMATS[] = {"%a %d %b", "%d %b", "%d"};
+  const int num_formats = (int)(sizeof(FORMATS) / sizeof(FORMATS[0]));
+
+  // gmtime() on the offset-shifted timestamp gives the local wall clock, with
+  // tm_wday/tm_mon filled in for strftime.
+  time_t local_t = utc_now + (time_t)s_local_offset_min * 60;
   struct tm *t = gmtime(&local_t);
-  char date_buf[20];
-  strftime(date_buf, sizeof(date_buf), "%a %d %b", t);
 
-  GFont font =
-      fonts_get_system_font(large ? FONT_KEY_GOTHIC_24_BOLD : FONT_KEY_GOTHIC_18_BOLD);
-  int line_h = large ? 26 : 20;
-  graphics_context_set_text_color(ctx, theme_fg());
-  graphics_draw_text(ctx, date_buf, font,
-                     GRect(4, (b.size.h - line_h) / 2 - 3, b.size.w - 8, line_h + 6),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-
-  // Hairline under the header, separating it from the first band.
-  graphics_context_set_stroke_color(ctx, theme_rule());
-  graphics_draw_line(ctx, GPoint(0, b.size.h - 1), GPoint(b.size.w, b.size.h - 1));
+  for (int i = 0; i < num_formats; i++) {
+    strftime(out, n, FORMATS[i], t);
+    GSize size = graphics_text_layout_get_content_size(
+        out, font, GRect(0, 0, 1000, 40), GTextOverflowModeWordWrap, GTextAlignmentLeft);
+    if (size.w <= avail)
+      return;
+  }
+  // Out of formats: the shortest one stays, and the draw ellipsizes it.
 }
 
 static void rows_layer_update(Layer *layer, GContext *ctx) {
@@ -321,20 +406,36 @@ static void rows_layer_update(Layer *layer, GContext *ctx) {
   Row rows[MAX_ROWS];
   int n = build_rows(rows, MAX_ROWS);
   if (n <= 0)
-    return;
-
-  // Bands are laid out by interpolating the band edges across the full body
-  // height. That spreads the leftover pixels evenly and, more importantly,
-  // leaves no uncoloured seams between adjacent bands.
-  int body_h = bounds.size.h;
-  int row_h = body_h / n;
-
-  const RowFont *rf = row_font_for(row_h);
-  GFont font = fonts_get_system_font(rf->key);
-  int time_w = s_h24 ? rf->time_w_24 : rf->time_w_12;
+    return;  // Unreachable: the local band is always row 0.
 
   time_t utc_now = time(NULL);
   int local_day = days_in_zone(utc_now, s_local_offset_min);
+
+  // Zone labels are formatted before the font is chosen, because the day marker
+  // is what pushes a label past the width the big fonts can afford. Row 0 is
+  // the local band; its date is formatted once the font is known.
+  char labels[MAX_ROWS][LABEL_BUF_LEN];
+  for (int i = 1; i < n; i++) {
+    int diff = days_in_zone(utc_now, rows[i].offset_min) - local_day;
+    if (diff == 0) {
+      snprintf(labels[i], LABEL_BUF_LEN, "%s", rows[i].label);
+    } else {
+      snprintf(labels[i], LABEL_BUF_LEN, "%s %+d", rows[i].label, diff);
+    }
+  }
+
+  // Bands are laid out by interpolating the band edges across the full body
+  // height. That spreads the leftover pixels evenly and, more importantly,
+  // leaves no uncolored seams between adjacent bands.
+  int body_h = bounds.size.h;
+  int row_h = body_h / n;
+
+  const RowFont *rf =
+      &ROW_FONTS[fit_row_font(row_font_for(row_h), labels + 1, n - 1, bounds.size.w)];
+  GFont font = fonts_get_system_font(rf->key);
+  int time_w = row_time_w(rf);
+
+  local_date(utc_now, font, bounds.size.w - time_w - 10, labels[0], LABEL_BUF_LEN);
 
   for (int i = 0; i < n; i++) {
     int y0 = (body_h * i) / n;
@@ -344,19 +445,11 @@ static void rows_layer_update(Layer *layer, GContext *ctx) {
     graphics_context_set_fill_color(ctx, rows[i].bg);
     graphics_fill_rect(ctx, GRect(0, y0, bounds.size.w, h), 0, GCornerNone);
 
-    // Adjacent bands of the same colour need a rule to read as separate rows;
-    // the red/blue bands already separate themselves.
+    // Adjacent bands of the same color need a rule to read as separate rows;
+    // bands of different colors already separate themselves.
     if (i > 0 && gcolor_equal(rows[i].bg, rows[i - 1].bg)) {
       graphics_context_set_stroke_color(ctx, theme_rule());
       graphics_draw_line(ctx, GPoint(4, y0), GPoint(bounds.size.w - 4, y0));
-    }
-
-    int diff = days_in_zone(utc_now, rows[i].offset_min) - local_day;
-    char label_buf[MAX_LABEL_LEN + 8];
-    if (diff == 0) {
-      snprintf(label_buf, sizeof(label_buf), "%s", rows[i].label);
-    } else {
-      snprintf(label_buf, sizeof(label_buf), "%s %+d", rows[i].label, diff);
     }
 
     char time_buf[10];
@@ -368,7 +461,7 @@ static void rows_layer_update(Layer *layer, GContext *ctx) {
     int text_h = rf->line_h + 6;
 
     graphics_context_set_text_color(ctx, rows[i].fg);
-    graphics_draw_text(ctx, label_buf, font,
+    graphics_draw_text(ctx, labels[i], font,
                        GRect(5, text_y, bounds.size.w - time_w - 8, text_h),
                        GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
     graphics_draw_text(ctx, time_buf, font,
@@ -378,7 +471,6 @@ static void rows_layer_update(Layer *layer, GContext *ctx) {
 }
 
 static void redraw_all(void) {
-  layer_mark_dirty(s_header_layer);
   layer_mark_dirty(s_rows_layer);
 }
 
@@ -410,9 +502,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     changed = true;
   }
 
-  t = dict_find(iter, MESSAGE_KEY_LOCAL_LABEL);
-  if (t && t->type == TUPLE_CSTRING) {
-    set_label(s_local_label, t->value->cstring);
+  t = dict_find(iter, MESSAGE_KEY_LOCAL_COLOR);
+  if (t) {
+    s_local_color_rgb = (uint32_t)t->value->int32 & 0xFFFFFF;
     changed = true;
   }
 
@@ -450,6 +542,11 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       s_zones[i].offset_min = t->value->int32;
       changed = true;
     }
+    t = dict_find(iter, kZColorKey[i]);
+    if (t) {
+      s_zones[i].color_rgb = (uint32_t)t->value->int32 & 0xFFFFFF;
+      changed = true;
+    }
   }
 
   if (!changed)
@@ -469,22 +566,16 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
-  int hdr_h = header_height(bounds.size.h);
 
   window_set_background_color(window, theme_bg());
 
-  s_header_layer = layer_create(GRect(0, 0, bounds.size.w, hdr_h));
-  layer_set_update_proc(s_header_layer, header_layer_update);
-  layer_add_child(root, s_header_layer);
-
-  s_rows_layer = layer_create(GRect(0, hdr_h, bounds.size.w, bounds.size.h - hdr_h));
+  s_rows_layer = layer_create(bounds);
   layer_set_update_proc(s_rows_layer, rows_layer_update);
   layer_add_child(root, s_rows_layer);
 }
 
 static void window_unload(Window *window) {
   (void)window;
-  layer_destroy(s_header_layer);
   layer_destroy(s_rows_layer);
 }
 
