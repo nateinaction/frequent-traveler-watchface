@@ -121,9 +121,48 @@ Note that in the emulator, pkjs derives the initial local offset from
 can be an hour off until you save Settings once. Real phones resolve it
 correctly.
 
+## Releases
+
+Commit messages are the release input, so they are enforced. Every PR title and
+every commit on the branch must be a
+[Conventional Commit](https://www.conventionalcommits.org/en/v1.0.0/) —
+`type(optional scope): description`.
+
+[`convco`](https://convco.github.io/) does both jobs from one rule set in
+`.convco`: `convco check` validates messages, `convco version --bump` derives
+the version they earn. It comes from the flake, so the `commit-msg` hook, the
+`conventional-commits` workflow and the release itself all agree. All three
+merge strategies are covered — squash takes the PR title, merge and rebase keep
+the branch commits, and both are checked.
+
+| Commit | Bump |
+| --- | --- |
+| `feat:` | minor |
+| `fix:`, `perf:`, `revert:` | patch |
+| any `type!:` or a `BREAKING CHANGE:` footer | major |
+| `docs:`, `chore:`, `ci:`, `build:`, `style:`, `test:`, `refactor:` | none — nothing is published |
+
+On a push to `main`, `publish` compares `convco version` with
+`convco version --bump`. If they match, no commit since the last tag earned a
+release and nothing is published. Otherwise the new version is stamped into
+`package.json` (which becomes the `.pbw`'s `versionLabel`), passed to
+`pebble publish --version`, and — only once the store has accepted the build —
+pushed as a `vX.Y.Z` tag. The tags are the source of truth; nothing is
+committed back to `main`. A rerun after a successful publish finds no
+releasable commits and does nothing; a rerun after a failed one retries the
+same version.
+
+Check what the next release would be, or what a message would do:
+
+```sh
+convco version --bump
+echo "fix(watchface): stop the local row clipping" | convco check --from-stdin
+```
+
 ## Files
 
 ```
+.convco                 commit types and the bump each one earns
 src/c/main.c            watchface: row model, band layout, drawing, AppMessage
 src/pkjs/index.js       phone companion: config persistence + AppMessage fan-out
 src/pkjs/config-page.js the Settings page (HTML string, resolves IANA -> offset)

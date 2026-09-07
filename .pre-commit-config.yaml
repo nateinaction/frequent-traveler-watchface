@@ -1,4 +1,23 @@
+default_install_hook_types: [pre-commit, commit-msg]
+# Without this, hooks that declare no `stages` run in *every* stage, so the
+# file linters would also fire against COMMIT_EDITMSG.
+default_stages: [pre-commit]
+
 repos:
+# Local mirror of the CI gate. convco comes from the flake dev shell and reads
+# the same .convco that decides what version a commit publishes, so a message
+# accepted here is accepted by CI.
+- repo: local
+  hooks:
+    - id: conventional-commit
+      name: conventional commit message
+      # pre-commit hands the message as a path, convco reads it from stdin;
+      # `_` fills $0 so the appended path lands in $1. `--strip` drops the
+      # comments git adds to the editor buffer.
+      entry: bash -c 'convco check --from-stdin --strip < "$1"' _
+      language: system
+      stages: [commit-msg]
+
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v5.0.0
   hooks:
