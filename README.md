@@ -22,6 +22,9 @@ suffix on its label.
 
 ![Frequent Traveller on Pebble Time 2](store/screenshots/screenshot_emery.png)
 
+Install it from the
+[Pebble appstore](https://apps.repebble.com/f747afcc10d24c91ad30d88c).
+
 ## Requirements
 
 These are the goals the watchface is built to, and the reference for whether a
