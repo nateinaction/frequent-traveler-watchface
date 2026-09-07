@@ -45,10 +45,14 @@
             # The Pebble SDK CLI (coredevices/repebble fork) is distributed as a
             # `uv` tool rather than a nixpkgs package. Install it once, locally,
             # without touching the base OS. It self-manages the SDK download.
+            # Advisory output goes to stderr: `nix develop --command foo` runs
+            # this hook first, so anything on stdout ends up inside a
+            # `$(...)` capture of foo's output. The publish workflow captures
+            # `convco version` that way.
             if ! command -v pebble >/dev/null 2>&1; then
-              echo "pebble CLI not found. Install it with:"
-              echo "    uv tool install pebble-tool"
-              echo "(uv is provided by this dev shell)."
+              echo "pebble CLI not found. Install it with:" >&2
+              echo "    uv tool install pebble-tool" >&2
+              echo "(uv is provided by this dev shell)." >&2
             fi
 
             # Keep the git hooks in sync with .pre-commit-config.yaml on every

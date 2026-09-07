@@ -36,6 +36,16 @@ jobs:
           fi
           current="$(nix develop --command convco version)"
           next="$(nix develop --command convco version --bump)"
+          # Both are captured from a subshell that also runs the flake's
+          # shellHook, so check they are bare versions before anything
+          # downstream treats them as one -- a stray line here would otherwise
+          # reach $GITHUB_OUTPUT, or the store.
+          for candidate in "$current" "$next"; do
+            if ! printf '%s' "$candidate" | grep -qxE '[0-9]+\.[0-9]+\.[0-9]+'; then
+              echo "::error::convco returned a non-version: ${candidate}"
+              exit 1
+            fi
+          done
           echo "Current ${current}, next ${next}"
           if [ "$current" = "$next" ]; then
             echo "release=false" >> "$GITHUB_OUTPUT"
