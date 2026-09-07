@@ -25,6 +25,7 @@
             pkgs.python3     # screenshot/asset helpers
             pkgs.libpng      # qemu-pebble links against it; see DYLD note below
             pkgs.pre-commit  # git hook runner (see .pre-commit-config.yaml)
+            pkgs.convco     # conventional-commit linting + release versioning
           ];
 
           shellHook = ''
@@ -50,9 +51,11 @@
               echo "(uv is provided by this dev shell)."
             fi
 
-            # Keep the git hook in sync with .pre-commit-config.yaml on every
+            # Keep the git hooks in sync with .pre-commit-config.yaml on every
             # shell entry, so a fresh clone (or a config change) is wired up
-            # without a manual `pre-commit install` step.
+            # without a manual `pre-commit install` step. The hook types come
+            # from `default_install_hook_types` (pre-commit and commit-msg, the
+            # latter running `convco check` on the message).
             if [ -d .git ]; then
               pre-commit install --install-hooks >/dev/null
             fi

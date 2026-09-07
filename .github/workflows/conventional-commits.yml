@@ -1,0 +1,39 @@
+name: conventional-commits
+
+# Releases are derived from commit messages (see the Releases section of the
+# README), so a malformed message is a release bug, not a style nit. The repo
+# allows all three merge strategies, and each one produces a different commit
+# on main: squash uses the PR title (or the single commit's subject), merge and
+# rebase keep the branch commits. Both inputs are checked so every path lands a
+# parseable message on main.
+#
+# `convco` comes from the flake, so CI, the local `commit-msg` hook and
+# `convco version --bump` all apply the same rules from .convco.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  lint-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Check the PR title
+        env:
+          # Untrusted input: piped in as data, never interpolated into the shell.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$PR_TITLE" | nix develop --command convco check --from-stdin
+
+      - name: Check the commits on the branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: nix develop --command convco check "${BASE_SHA}..${HEAD_SHA}"

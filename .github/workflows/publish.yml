@@ -8,13 +8,62 @@ concurrency:
   group: publish
   cancel-in-progress: false
 
+permissions:
+  contents: write  # push the release tag
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the version is derived from tags and commit history
 
       - uses: DeterminateSystems/nix-installer-action@main
+
+      # `v*` tags are the source of truth for the version; nothing is committed
+      # back to main. convco reads the tags and the commits since the newest
+      # one, and applies the bump table in .convco. When no commit earns a bump
+      # it reports the current version unchanged, which is the signal to
+      # publish nothing.
+      - name: Derive the release version
+        id: version
+        run: |
+          set -euo pipefail
+          if ! git describe --tags --abbrev=0 --match 'v*' >/dev/null 2>&1; then
+            echo "::error::no v* tag to bump from; tag the released version first"
+            exit 1
+          fi
+          current="$(nix develop --command convco version)"
+          next="$(nix develop --command convco version --bump)"
+          echo "Current ${current}, next ${next}"
+          if [ "$current" = "$next" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${next}" >> "$GITHUB_OUTPUT"
+
+      # package.json's `version` becomes the .pbw's versionLabel. It is stamped
+      # in-flight rather than committed, so main never carries a version bump.
+      - name: Stamp the version into package.json
+        if: steps.version.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("package.json") as handle:
+              manifest = json.load(handle)
+          manifest["version"] = os.environ["VERSION"]
+          with open("package.json", "w") as handle:
+              json.dump(manifest, handle, indent=2)
+              handle.write("\n")
+          PY
+          git --no-pager diff --stat package.json
 
       # PEBBLE_FIREBASE_ID_TOKEN (the credential pebble-tool actually needs)
       # expires after about an hour, so it can't be stored as a secret
@@ -22,6 +71,7 @@ jobs:
       # fresh ID token on every run.
       - name: Refresh Firebase ID token
         id: firebase
+        if: steps.version.outputs.release == 'true'
         env:
           REFRESH_TOKEN: ${{ secrets.PEBBLE_FIREBASE_REFRESH_TOKEN }}
           API_KEY: ${{ secrets.PEBBLE_FIREBASE_API_KEY }}
@@ -36,11 +86,34 @@ jobs:
           echo "id_token=${id_token}" >> "$GITHUB_OUTPUT"
 
       - name: Build and publish to the Rebble app store
+        if: steps.version.outputs.release == 'true'
         env:
           PEBBLE_FIREBASE_ID_TOKEN: ${{ steps.firebase.outputs.id_token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           nix develop --command bash -euo pipefail -c '
             uv tool install pebble-tool
             pebble sdk install latest
-            pebble publish --non-interactive --no-gif-all-platforms
+            pebble publish --non-interactive --no-gif-all-platforms --version "$VERSION"
           '
+
+      # Tag last: the tag is what stops the next run from re-releasing, so it
+      # must only appear once the store actually has the build. A rerun after a
+      # failed publish therefore retries the same version; a rerun after a
+      # successful one finds no releasable commits and does nothing.
+      - name: Tag the release
+        if: steps.version.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Report a skipped release
+        if: steps.version.outputs.release != 'true'
+        run: |
+          echo "No releasable commits since the last tag; nothing published." \
+            >> "$GITHUB_STEP_SUMMARY"
