@@ -15,7 +15,7 @@ A configured zone that currently resolves to the **same offset as your local
 zone is hidden**, rather than drawn as a duplicate of the local band — the
 remaining rows just grow to fill the space.
 
-The background is **white by default**; a dark theme is available in Settings.
+The background is **white**, and so is a band whose color you haven't changed.
 
 Any row whose calendar date differs from your local date gets a `+1` / `-1`
 suffix on its label.
@@ -31,7 +31,7 @@ change is correct.
 |---|-------------|
 | 1 | **Local time is a row like any other timezone**, but is **always drawn first**. It carries the **local date**, set in the same size as every other row's text. |
 | 2 | The watchface **allows additional timezones to be added**. |
-| 3 | The watchface **background is white by default**. |
+| 3 | The watchface **background is white**, as is the default color of every band. |
 | 4 | **Rows must be in order** by UTC offset: zones ahead of UTC above, zones behind UTC below. |
 | 5 | **Any timezone row matching the current (local) zone is hidden** from the list. |
 | 6 | **Every timezone has a configurable background color**, chosen with an RGB color picker. |
@@ -62,7 +62,7 @@ leftover pixels evenly and leaves no uncolored seams between bands.
 | Rows | Contents | Row height (emery) |
 |------|----------|--------------------|
 | 1 | local only | 228 px |
-| 4 | local + 3 zones (default) | 57 px |
+| 6 | local + 5 zones (shipped default) | 38 px |
 | 7 | local + 6 zones (max) | 32 px |
 
 Font size follows both constraints, not just height: a band tall enough for
@@ -90,7 +90,6 @@ Open the watchface's Settings from the Pebble app to configure:
 
 - **Local timezone** (IANA zone, so DST is handled) and the **color of its band**
 - **12- / 24-hour clock**
-- **Dark background**
 - **Other timezones** — up to six, each with a custom label and a color
 
 ### How timezones actually work here
@@ -105,6 +104,12 @@ Pebble emulator's JS host (`pypkjs`) crashes with a fatal OOM on
 entirely and only forwards numbers. Offsets refresh whenever you save Settings.
 
 ### Colors
+
+Out of the box the face ships the demo config in the screenshot above: black
+bands with **UTC** picked out in blue, under a white local band. A zone you add
+yourself starts **white** and stays that way until you pick a color for it.
+Adjacent bands of the same color are separated by a hairline rule, so an
+all-white face still reads as rows.
 
 The picker is a plain `<input type="color">`, but the Pebble screen only has 64
 colors (two bits per channel). The page snaps your choice to that palette as you

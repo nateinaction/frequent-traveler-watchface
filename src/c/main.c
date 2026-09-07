@@ -12,7 +12,7 @@
 // configured zone that currently resolves to your local offset is hidden rather
 // than drawn as a duplicate of the local band.
 //
-// The background is white by default (a dark theme is available in Settings).
+// The background is white, and so is a band whose color hasn't been changed.
 //
 // Any row whose calendar date differs from your local date gets a "+1" / "-1"
 // suffix on its label.
@@ -33,10 +33,13 @@
 // date ("Sun 06 Sep").
 #define LABEL_BUF_LEN (MAX_LABEL_LEN + 8)
 
+// A band nobody has recolored is white, like the background behind it; the
+// seam rules are what keep such rows apart.
+#define DEFAULT_COLOR_RGB 0xFFFFFF
+
 #define PERSIST_LOCAL_OFFSET 1
 #define PERSIST_NUM_ZONES 2
 #define PERSIST_H24 4
-#define PERSIST_DARK 5
 #define PERSIST_LOCAL_COLOR 8
 // Bumped from 3 when Zone gained a color: a blob written by the previous
 // layout would deserialize into garbage offsets, so the old key is abandoned
@@ -85,9 +88,8 @@ static Layer *s_rows_layer;
 static Zone s_zones[MAX_ZONES];
 static int s_num_zones = 0;
 static int32_t s_local_offset_min = 0;
-static uint32_t s_local_color_rgb = 0xAA0000;
+static uint32_t s_local_color_rgb = DEFAULT_COLOR_RGB;
 static bool s_h24 = true;
-static bool s_dark = false;
 
 // -----------------------------------------------------------------------------
 // Theme
@@ -97,18 +99,18 @@ static bool s_dark = false;
 // and in whatever is behind them. Band colors come from the config, per zone.
 
 static GColor theme_bg(void) {
-  return s_dark ? GColorBlack : GColorWhite;
+  return GColorWhite;
 }
 #ifndef PBL_COLOR
 // Only black-and-white watches need a foreground from the theme: on a color
 // watch every glyph sits on a band and takes its contrast from the band color.
 static GColor theme_fg(void) {
-  return s_dark ? GColorWhite : GColorBlack;
+  return GColorBlack;
 }
 #endif
 static GColor theme_rule(void) {
 #ifdef PBL_COLOR
-  return s_dark ? GColorDarkGray : GColorLightGray;
+  return GColorLightGray;
 #else
   // No gray to make a subtle rule from, and on a black-and-white watch every
   // band is the same color — the seams are the only thing keeping rows apart.
@@ -199,22 +201,32 @@ static void set_label(char *dst, const char *src) {
   dst[MAX_LABEL_LEN] = '\0';
 }
 
+// The out-of-the-box demo: black bands with UTC picked out in blue, under a
+// white local band. Zones the user adds later default to white instead
+// (DEFAULT_COLOR_RGB); these carry colors so the face means something before
+// Settings has ever been opened. The offsets are a standing-in guess — the
+// phone replaces them with DST-correct ones on the first config message.
 static void load_defaults(void) {
   s_local_offset_min = 0;
-  s_local_color_rgb = 0xAA0000;
+  s_local_color_rgb = DEFAULT_COLOR_RGB;
   s_h24 = clock_is_24h_style();
-  s_dark = false;
   memset(s_zones, 0, sizeof(s_zones));
-  s_num_zones = 3;
-  set_label(s_zones[0].label, "NYC");
-  s_zones[0].offset_min = -300;
-  s_zones[0].color_rgb = 0xAA5500;
-  set_label(s_zones[1].label, "LDN");
-  s_zones[1].offset_min = 0;
-  s_zones[1].color_rgb = 0x0055AA;
-  set_label(s_zones[2].label, "TYO");
-  s_zones[2].offset_min = 540;
-  s_zones[2].color_rgb = 0x00AA55;
+  s_num_zones = 5;
+  set_label(s_zones[0].label, "PAR");
+  s_zones[0].offset_min = 120;
+  s_zones[0].color_rgb = 0x000000;
+  set_label(s_zones[1].label, "TYO");
+  s_zones[1].offset_min = 540;
+  s_zones[1].color_rgb = 0x000000;
+  set_label(s_zones[2].label, "UTC");
+  s_zones[2].offset_min = 0;
+  s_zones[2].color_rgb = 0x0055AA;
+  set_label(s_zones[3].label, "NYC");
+  s_zones[3].offset_min = -240;
+  s_zones[3].color_rgb = 0x000000;
+  set_label(s_zones[4].label, "LAX");
+  s_zones[4].offset_min = -420;
+  s_zones[4].color_rgb = 0x000000;
 }
 
 static void load_config(void) {
@@ -241,9 +253,6 @@ static void load_config(void) {
   } else {
     s_h24 = clock_is_24h_style();
   }
-  if (persist_exists(PERSIST_DARK)) {
-    s_dark = persist_read_int(PERSIST_DARK) != 0;
-  }
   // A blob written by an older/corrupt version could leave a label unterminated
   // or a color with junk in its high byte.
   for (int i = 0; i < MAX_ZONES; i++) {
@@ -257,7 +266,6 @@ static void save_config(void) {
   persist_write_int(PERSIST_LOCAL_COLOR, (int32_t)s_local_color_rgb);
   persist_write_int(PERSIST_NUM_ZONES, s_num_zones);
   persist_write_int(PERSIST_H24, s_h24 ? 1 : 0);
-  persist_write_int(PERSIST_DARK, s_dark ? 1 : 0);
   persist_write_data(PERSIST_ZONES_BLOB_V2, s_zones, sizeof(s_zones));
 }
 
@@ -514,12 +522,6 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     changed = true;
   }
 
-  t = dict_find(iter, MESSAGE_KEY_DARK);
-  if (t) {
-    s_dark = (t->value->int32 != 0);
-    changed = true;
-  }
-
   t = dict_find(iter, MESSAGE_KEY_NUM_ZONES);
   if (t) {
     int n = t->value->int32;
@@ -552,10 +554,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (!changed)
     return;
 
-  APP_LOG(APP_LOG_LEVEL_INFO, "config updated: zones=%d local_off=%d h24=%d dark=%d",
-          s_num_zones, (int)s_local_offset_min, (int)s_h24, (int)s_dark);
+  APP_LOG(APP_LOG_LEVEL_INFO, "config updated: zones=%d local_off=%d h24=%d", s_num_zones,
+          (int)s_local_offset_min, (int)s_h24);
   save_config();
-  window_set_background_color(s_window, theme_bg());
   redraw_all();
 }
 

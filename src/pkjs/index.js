@@ -20,15 +20,19 @@ var getConfigPageHtml = require('./config-page.js');
 // on-screen row count is this plus one.
 var MAX_ZONES = 6;
 var MAX_LABEL_LEN = 12;
-var DEFAULT_COLOR = 0x555555;
-var DEFAULT_LOCAL_COLOR = 0xAA0000;
+// A band nobody has recolored is white, like the watchface background.
+var DEFAULT_COLOR = 0xFFFFFF;
 var STORAGE_KEY = 'frequentTravellerConfig';
 
-// Red is the local band's default, so the zones start elsewhere in the palette.
+// The shipped demo: black bands with UTC picked out in blue, under a white
+// local band. Offsets here are only the pre-Settings guess; the config page
+// resolves the real ones (with DST) the first time you save.
 var DEFAULT_ZONES = [
-  { tz: 'America/New_York', label: 'NYC', offset: -240, color: 0xAA5500 },
-  { tz: 'Europe/London',    label: 'LDN', offset:   60, color: 0x0055AA },
-  { tz: 'Asia/Tokyo',       label: 'TYO', offset:  540, color: 0x00AA55 }
+  { tz: 'Europe/Paris',     label: 'PAR', offset:  120, color: 0x000000 },
+  { tz: 'Asia/Tokyo',       label: 'TYO', offset:  540, color: 0x000000 },
+  { tz: 'Etc/UTC',          label: 'UTC', offset:    0, color: 0x0055AA },
+  { tz: 'America/New_York', label: 'NYC', offset: -240, color: 0x000000 },
+  { tz: 'America/Los_Angeles', label: 'LAX', offset: -420, color: 0x000000 }
 ];
 
 function phoneLocalOffset() {
@@ -46,9 +50,8 @@ function defaultConfig() {
     // render the local band correctly on first launch.
     localTz:     '',
     localOffset: phoneLocalOffset(),
-    localColor:  DEFAULT_LOCAL_COLOR,
+    localColor:  DEFAULT_COLOR,
     h24:         true,
-    dark:        false,
     zones:       DEFAULT_ZONES.map(cloneZone)
   };
 }
@@ -57,11 +60,10 @@ function normalize(c) {
   if (typeof c.localOffset !== 'number') c.localOffset = phoneLocalOffset();
   if (typeof c.localTz     !== 'string') c.localTz = '';
   if (typeof c.localColor  !== 'number' || !isFinite(c.localColor)) {
-    c.localColor = DEFAULT_LOCAL_COLOR;
+    c.localColor = DEFAULT_COLOR;
   }
   c.localColor = (c.localColor | 0) & 0xFFFFFF;
   if (typeof c.h24         !== 'boolean') c.h24 = true;
-  if (typeof c.dark        !== 'boolean') c.dark = false;
   if (!Array.isArray(c.zones)) c.zones = [];
   if (c.zones.length > MAX_ZONES) c.zones = c.zones.slice(0, MAX_ZONES);
   c.zones.forEach(function (z) {
@@ -98,11 +100,10 @@ function buildDict(config) {
   var dict = {
     'LOCAL_OFFSET': (config.localOffset | 0),
     'LOCAL_COLOR':  (((typeof config.localColor === 'number' ? config.localColor
-                                                            : DEFAULT_LOCAL_COLOR) | 0)
+                                                            : DEFAULT_COLOR) | 0)
                      & 0xFFFFFF),
     'NUM_ZONES':    zones.length,
-    'H24':          (config.h24 ? 1 : 0),
-    'DARK':         (config.dark ? 1 : 0)
+    'H24':          (config.h24 ? 1 : 0)
   };
   for (var i = 0; i < zones.length; i++) {
     dict['Z_LABEL_'  + i] = String(zones[i].label || '').slice(0, MAX_LABEL_LEN);

@@ -5,10 +5,10 @@
 // All IANA -> UTC-offset resolution happens here, in the phone's webview,
 // because this is the only place in the app with a working Intl (see index.js).
 
-// Default band colors, handed out in order as zones are added. They're already
-// on Pebble's 64-color palette (channels are multiples of 0x55), so the watch
-// renders them exactly as shown. Red is left out: it's the local band's default.
-var PALETTE = [0x0055AA, 0x00AA55, 0xAA5500, 0x5500AA, 0x00AAAA, 0xAA0055];
+// A zone you add starts white, like the watchface background behind it, until
+// you pick a color from the picker. (The zones "Reset defaults" restores are
+// the shipped demo, and carry their own colors.)
+var DEFAULT_COLOR = 0xFFFFFF;
 
 var TZ_LIST = [
   { tz: 'Etc/UTC',                        name: 'UTC',                            short: 'UTC' },
@@ -31,7 +31,8 @@ var TZ_LIST = [
   { tz: 'Atlantic/Azores',                name: 'Azores',                         short: 'AZO' },
   { tz: 'Atlantic/Cape_Verde',            name: 'Cape Verde',                     short: 'CV'  },
   { tz: 'Europe/London',                  name: 'London, Dublin, Lisbon',         short: 'LDN' },
-  { tz: 'Europe/Berlin',                  name: 'Berlin, Paris, Madrid, Rome',    short: 'BER' },
+  { tz: 'Europe/Paris',                   name: 'Paris',                          short: 'PAR' },
+  { tz: 'Europe/Berlin',                  name: 'Berlin, Madrid, Rome',           short: 'BER' },
   { tz: 'Europe/Athens',                  name: 'Athens, Helsinki',               short: 'ATH' },
   { tz: 'Europe/Istanbul',                name: 'Istanbul',                       short: 'IST' },
   { tz: 'Africa/Lagos',                   name: 'Lagos, Kinshasa',                short: 'LOS' },
@@ -68,7 +69,7 @@ module.exports = function getConfigPageHtml(initialConfig) {
   var bootstrap = {
     config: initialConfig || { localTz: '', zones: [] },
     tzList: TZ_LIST,
-    palette: PALETTE
+    defaultColor: DEFAULT_COLOR
   };
   var json = JSON.stringify(bootstrap)
     .replace(/</g, '\\u003c')   // safe for embedding inside a <script> element
@@ -126,8 +127,7 @@ module.exports = function getConfigPageHtml(initialConfig) {
 
     '<h2>Appearance</h2>',
     '<label class="check"><input type="checkbox" id="h24"><span>Use 24-hour clock</span></label>',
-    '<label class="check"><input type="checkbox" id="dark"><span>Dark background</span></label>',
-    '<p class="hint">The background is white by default. In 12-hour mode times show an a/p suffix.</p>',
+    '<p class="hint">The background is white, and so is a band you haven\'t recolored. In 12-hour mode times show an a/p suffix.</p>',
 
     '<h2>Other timezones</h2>',
     '<table><thead><tr><th class="idx">#</th><th class="lbl">Label</th><th>Timezone</th>',
@@ -150,7 +150,7 @@ module.exports = function getConfigPageHtml(initialConfig) {
     '<script id="boot" type="application/json">', json, '</script>',
     '<script>(function(){',
     'var BOOT=JSON.parse(document.getElementById("boot").textContent);',
-    'var TZ_LIST=BOOT.tzList;var PALETTE=BOOT.palette;',
+    'var TZ_LIST=BOOT.tzList;var DEFAULT_COLOR=BOOT.defaultColor;',
     'var TZ_BY=Object.create(null);TZ_LIST.forEach(function(t){TZ_BY[t.tz]=t;});',
     'var config=BOOT.config||{localTz:"",zones:[]};',
     'if(!config.zones)config.zones=[];',
@@ -166,7 +166,6 @@ module.exports = function getConfigPageHtml(initialConfig) {
     'function toHex(rgb){var s=((rgb|0)&0xFFFFFF).toString(16);while(s.length<6)s="0"+s;return "#"+s;}',
     // Strict: parseInt("bogus",16) would happily return 11.
     'function fromHex(s){var m=/^#?([0-9a-fA-F]{6})$/.exec(String(s));return m?parseInt(m[1],16):0x555555;}',
-    'function nextColor(){return PALETTE[config.zones.length%PALETTE.length];}',
     // Current UTC offset of `tz` in minutes: format the instant in that zone,
     // read it back as if it were UTC, and difference the two.
     'function offsetMin(tz,t){try{var dtf=new Intl.DateTimeFormat("en-US",{timeZone:tz,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});var p=dtf.formatToParts(new Date(t));var m={};p.forEach(function(x){if(x.type!=="literal")m[x.type]=x.value;});var h=+m.hour;if(h===24)h=0;return Math.round((Date.UTC(+m.year,+m.month-1,+m.day,h,+m.minute,+m.second)-t)/60000);}catch(e){return 0;}}',
@@ -179,7 +178,7 @@ module.exports = function getConfigPageHtml(initialConfig) {
     'document.getElementById("localTz").addEventListener("change",function(e){config.localTz=e.target.value;});',
 
     'var localColorEl=document.getElementById("localColor");',
-    'config.localColor=snapColor(typeof config.localColor==="number"?config.localColor:0xAA0000);',
+    'config.localColor=snapColor(typeof config.localColor==="number"?config.localColor:DEFAULT_COLOR);',
     'localColorEl.value=toHex(config.localColor);',
     'localColorEl.addEventListener("input",function(e){config.localColor=snapColor(fromHex(e.target.value));e.target.value=toHex(config.localColor);});',
     'localColorEl.addEventListener("change",function(e){config.localColor=snapColor(fromHex(e.target.value));e.target.value=toHex(config.localColor);});',
@@ -188,15 +187,11 @@ module.exports = function getConfigPageHtml(initialConfig) {
     'h24El.checked=(typeof config.h24==="boolean")?config.h24:true;',
     'h24El.addEventListener("change",function(e){config.h24=e.target.checked;});',
 
-    'var darkEl=document.getElementById("dark");',
-    'darkEl.checked=(typeof config.dark==="boolean")?config.dark:false;',
-    'darkEl.addEventListener("change",function(e){config.dark=e.target.checked;});',
-
     // Zero extra zones is legal — the local band then fills the screen alone.
     'var MAX_ZONES=6;',
     'if(config.zones.length>MAX_ZONES)config.zones=config.zones.slice(0,MAX_ZONES);',
     // Zones saved before colors existed, or hand-edited storage, get one here.
-    'config.zones.forEach(function(z,i){z.color=snapColor(typeof z.color==="number"?z.color:PALETTE[i%PALETTE.length]);});',
+    'config.zones.forEach(function(z){z.color=snapColor(typeof z.color==="number"?z.color:DEFAULT_COLOR);});',
 
     'var tbody=document.getElementById("zonesBody");',
     'var addBtn=document.getElementById("addZone");',
@@ -207,13 +202,13 @@ module.exports = function getConfigPageHtml(initialConfig) {
     // still matches the previous zone's suggestion (i.e. wasn't hand-edited).
     'function onEdit(e){var i=+e.target.dataset.i;var k=e.target.dataset.k;if(k==="tz"){var oldShort=(TZ_BY[config.zones[i].tz]||{}).short;config.zones[i].tz=e.target.value;var ne=TZ_BY[e.target.value];if(ne&&config.zones[i].label===oldShort){config.zones[i].label=ne.short;renderRows();}}else if(k==="color"){var snapped=snapColor(fromHex(e.target.value));config.zones[i].color=snapped;e.target.value=toHex(snapped);}else{config.zones[i].label=e.target.value.slice(0,12);}}',
 
-    'addBtn.addEventListener("click",function(){if(config.zones.length>=MAX_ZONES)return;var d=TZ_BY["America/New_York"]||TZ_LIST[0];config.zones.push({tz:d.tz,label:d.short,color:nextColor()});renderRows();});',
-    'document.getElementById("resetZones").addEventListener("click",function(){config.zones=[{tz:"America/New_York",label:"NYC",color:PALETTE[0]},{tz:"Europe/London",label:"LDN",color:PALETTE[1]},{tz:"Asia/Tokyo",label:"TYO",color:PALETTE[2]}];renderRows();});',
+    'addBtn.addEventListener("click",function(){if(config.zones.length>=MAX_ZONES)return;var d=TZ_BY["America/New_York"]||TZ_LIST[0];config.zones.push({tz:d.tz,label:d.short,color:DEFAULT_COLOR});renderRows();});',
+    'document.getElementById("resetZones").addEventListener("click",function(){config.zones=[{tz:"Europe/Paris",label:"PAR",color:0x000000},{tz:"Asia/Tokyo",label:"TYO",color:0x000000},{tz:"Etc/UTC",label:"UTC",color:0x0055AA},{tz:"America/New_York",label:"NYC",color:0x000000},{tz:"America/Los_Angeles",label:"LAX",color:0x000000}];renderRows();});',
     'document.getElementById("clearZones").addEventListener("click",function(){config.zones=[];renderRows();});',
 
     // On save: resolve every IANA name to a current offset (Intl works here in
     // the webview) so pkjs can ship numbers to the watch without touching Intl.
-    'document.getElementById("save").addEventListener("click",function(){var now=Date.now();var out={localTz:config.localTz,localOffset:offsetMin(config.localTz,now),localColor:snapColor(config.localColor),h24:!!config.h24,dark:!!config.dark,zones:config.zones.map(function(z){return{tz:z.tz,label:z.label,offset:offsetMin(z.tz,now),color:snapColor(z.color)};})};document.location="pebblejs://close#"+encodeURIComponent(JSON.stringify(out));});',
+    'document.getElementById("save").addEventListener("click",function(){var now=Date.now();var out={localTz:config.localTz,localOffset:offsetMin(config.localTz,now),localColor:snapColor(config.localColor),h24:!!config.h24,zones:config.zones.map(function(z){return{tz:z.tz,label:z.label,offset:offsetMin(z.tz,now),color:snapColor(z.color)};})};document.location="pebblejs://close#"+encodeURIComponent(JSON.stringify(out));});',
     'document.getElementById("cancel").addEventListener("click",function(){document.location="pebblejs://close";});',
 
     'renderRows();',
