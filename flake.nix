@@ -1,5 +1,5 @@
 {
-  description = "Frequent Traveller — Pebble multi-timezone watchface dev environment";
+  description = "Frequent Traveler — Pebble multi-timezone watchface dev environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

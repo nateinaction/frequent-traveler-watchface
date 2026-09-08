@@ -1,4 +1,4 @@
-// Returns the HTML string for the Frequent Traveller phone config page.
+// Returns the HTML string for the Frequent Traveler phone config page.
 // index.js opens it as a data: URL; the page posts its result back through the
 // pebblejs://close# protocol.
 //
@@ -80,7 +80,7 @@ module.exports = function getConfigPageHtml(initialConfig) {
     '<!DOCTYPE html>',
     '<html lang="en"><head><meta charset="UTF-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    '<title>Frequent Traveller \u2013 Settings</title>',
+    '<title>Frequent Traveler \u2013 Settings</title>',
     '<style>',
     'body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
     '  background:#111;color:#eee;padding:16px;font-size:15px;}',
@@ -115,7 +115,7 @@ module.exports = function getConfigPageHtml(initialConfig) {
     '.footer button{flex:1;padding:12px;}',
     '.hint{font-size:11px;color:#888;margin-top:6px;line-height:1.4;}',
     '</style></head><body>',
-    '<h1>Frequent Traveller \u2013 Settings</h1>',
+    '<h1>Frequent Traveler \u2013 Settings</h1>',
     '<p class="hint">Every timezone gets a full-width colored band. Your local zone ',
     'is always the top band, and carries the date.</p>',
 

@@ -1,4 +1,4 @@
-// Frequent Traveller — phone-side JS companion.
+// Frequent Traveler — phone-side JS companion.
 //
 // This file deliberately does NOT use `Intl.DateTimeFormat`. The Pebble
 // emulator's JS host (pypkjs) crashes on Intl construction with a fatal OOM.
@@ -22,7 +22,11 @@ var MAX_ZONES = 6;
 var MAX_LABEL_LEN = 12;
 // A band nobody has recolored is white, like the watchface background.
 var DEFAULT_COLOR = 0xFFFFFF;
-var STORAGE_KEY = 'frequentTravellerConfig';
+var STORAGE_KEY = 'frequentTravelerConfig';
+// The key shipped misspelled. Anyone who saved settings before the rename has
+// their config under the old one, so reads fall back to it; the next save
+// moves them over.
+var LEGACY_STORAGE_KEY = 'frequentTravellerConfig';
 
 // The shipped demo: black bands with UTC picked out in blue, under a white
 // local band. Offsets here are only the pre-Settings guess; the config page
@@ -80,6 +84,7 @@ function normalize(c) {
 function loadConfig() {
   try {
     var s = localStorage.getItem(STORAGE_KEY);
+    if (!s) s = localStorage.getItem(LEGACY_STORAGE_KEY);
     if (s) return normalize(JSON.parse(s));
   } catch (e) {
     console.log('loadConfig failed: ' + e);

@@ -1,5 +1,5 @@
 {
-  "name": "frequent-traveller",
+  "name": "frequent-traveler",
   "author": "Nate Gay",
   "version": "1.0.0",
   "keywords": [
@@ -12,7 +12,7 @@
     "screenshot": "bash ./scripts/screenshot.sh"
   },
   "pebble": {
-    "displayName": "Frequent Traveller",
+    "displayName": "Frequent Traveler",
     "uuid": "01072cc6-f6eb-49bc-a6ce-3f40d4d2d176",
     "sdkVersion": "3",
     "enableMultiJS": true,

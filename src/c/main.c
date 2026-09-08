@@ -1,4 +1,4 @@
-// Frequent Traveller — a Pebble watchface for people who live across
+// Frequent Traveler — a Pebble watchface for people who live across
 // timezones.
 //
 // The whole screen is a stack of full-width color bands, one per timezone, each

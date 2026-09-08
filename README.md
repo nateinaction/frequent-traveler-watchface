@@ -1,4 +1,4 @@
-# Frequent Traveller
+# Frequent Traveler
 
 A Pebble watchface for people who live across timezones.
 
@@ -20,7 +20,7 @@ The background is **white**, and so is a band whose color you haven't changed.
 Any row whose calendar date differs from your local date gets a `+1` / `-1`
 suffix on its label.
 
-![Frequent Traveller on Pebble Time 2](store/screenshots/screenshot_emery.png)
+![Frequent Traveler on Pebble Time 2](store/screenshots/screenshot_emery.png)
 
 Install it from the
 [Pebble appstore](https://apps.repebble.com/f747afcc10d24c91ad30d88c).
@@ -132,7 +132,7 @@ because the SDK's prebuilt `qemu-pebble` links against a hardcoded Homebrew
 path for `libpng16`.
 
 ```sh
-pebble build                                    # -> build/frequent-traveller-watchface.pbw
+pebble build                                    # -> build/frequent-traveler-watchface.pbw
 pebble install --emulator emery                 # run in QEMU
 pebble screenshot --no-open --emulator emery out.png
 pebble install --cloudpebble                    # deploy to a real watch
