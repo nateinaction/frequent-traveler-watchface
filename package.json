@@ -9,7 +9,7 @@
   "dependencies": {},
   "scripts": {
     "install-emulator": "pebble build && pebble install --emulator emery && pebble logs",
-    "screenshot": "pebble build && pebble install --emulator emery && pebble screenshot store/screenshots/screenshot_emery.png --emulator emery --no-open"
+    "screenshot": "bash ./scripts/screenshot.sh"
   },
   "pebble": {
     "displayName": "Frequent Traveller",
